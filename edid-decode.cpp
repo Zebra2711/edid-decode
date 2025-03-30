@@ -230,6 +230,17 @@ static void usage(void)
 
 static std::string s_msgs[EDID_MAX_BLOCKS + 1][2];
 
+static void print_version()
+{
+#define STR(x) #x
+#define STRING(x) STR(x)
+#ifndef __EMSCRIPTEN__
+	printf("edid-decode %s%s\n", PACKAGE_VERSION, STRING(GIT_COMMIT_CNT));
+#endif
+	if (strlen(STRING(GIT_SHA)))
+		printf("edid-decode SHA: %s %s\n", STRING(GIT_SHA), STRING(GIT_COMMIT_DATE));
+}
+
 void msg(bool is_warn, const char *fmt, ...)
 {
 	char buf[1024] = "";
@@ -1136,6 +1147,8 @@ static int edid_from_file(const char *from_file, FILE *error)
 
 	odd_hex_digits = false;
 	if (!extract_edid(fd, error)) {
+		if (options[OptPhysicalAddress])
+			return -1;
 		if (!state.edid_size) {
 			fprintf(error, "EDID of '%s' was empty.\n", from_file);
 			return -1;
@@ -1148,8 +1161,9 @@ static int edid_from_file(const char *from_file, FILE *error)
 		return -1;
 	}
 	if (state.edid_size % EDID_PAGE_SIZE) {
-		fprintf(error, "EDID length %u is not a multiple of %u.\n",
-			state.edid_size, EDID_PAGE_SIZE);
+		if (!options[OptPhysicalAddress])
+			fprintf(error, "EDID length %u is not a multiple of %u.\n",
+				state.edid_size, EDID_PAGE_SIZE);
 		return -1;
 	}
 	state.num_blocks = state.edid_size / EDID_PAGE_SIZE;
@@ -1157,7 +1171,8 @@ static int edid_from_file(const char *from_file, FILE *error)
 		close(fd);
 
 	if (memcmp(edid, "\x00\xFF\xFF\xFF\xFF\xFF\xFF\x00", 8)) {
-		fprintf(error, "No EDID header found in '%s'.\n", from_file);
+		if (!options[OptPhysicalAddress])
+			fprintf(error, "No EDID header found in '%s'.\n", from_file);
 		return -1;
 	}
 	return 0;
@@ -1564,7 +1579,8 @@ int edid_state::parse_edid()
 
 	if (!options[OptSkipSHA] && strlen(STRING(SHA))) {
 		options[OptSkipSHA] = 1;
-		printf("\nedid-decode SHA: %s %s\n", STRING(SHA), STRING(DATE));
+		printf("\n");
+		print_version();
 	}
 
 	if (options[OptCheck]) {
@@ -1781,7 +1797,8 @@ int edid_state::parse_if(const std::string &fname)
 
 	if (!options[OptSkipSHA] && strlen(STRING(SHA))) {
 		options[OptSkipSHA] = 1;
-		printf("\nedid-decode SHA: %s %s\n", STRING(SHA), STRING(DATE));
+		printf("\n");
+		print_version();
 	}
 
 	if (options[OptCheck]) {
@@ -1958,6 +1975,8 @@ static int parse_cvt_subopt(char **subopt_str, double *value)
 
 	if (opt_str)
 		*value = strtod(opt_str, nullptr);
+	else
+		*value = 0;
 	return opt;
 }
 
@@ -2099,6 +2118,8 @@ static int parse_gtf_subopt(char **subopt_str, double *value)
 		*value = round(2.0 * strtod(opt_str, nullptr));
 	else if (opt_str)
 		*value = strtod(opt_str, nullptr);
+	else
+		*value = 0;
 	return opt;
 }
 
@@ -2351,7 +2372,7 @@ int main(int argc, char **argv)
 	unsigned test_rel_msleep = 50;
 	unsigned idx = 0;
 	unsigned i;
-	int ret;
+	int ret = 0;
 
 	for (i = 0; long_options[i].name; i++) {
 		if (!isalpha(long_options[i].val))
@@ -2504,10 +2525,7 @@ int main(int argc, char **argv)
 		}
 	}
 	if (optind == argc && options[OptVersion]) {
-		if (strlen(STRING(SHA)))
-			printf("edid-decode SHA: %s %s\n", STRING(SHA), STRING(DATE));
-		else
-			printf("edid-decode SHA: not available\n");
+		print_version();
 		return 0;
 	}
 
