@@ -25,7 +25,7 @@ int edid_state::parse_if_hdr(const unsigned char *x, unsigned size, unsigned cha
 		return -1;
 	}
 	if (length + 3U < size) {
-		warn("There are %d dummy bytes after the payload.\n", length + 3 - size);
+		warn("There are %d dummy bytes after the payload.\n", size - length - 3);
 		if (!memchk(x + length + 3, length + 3 - size))
 			warn("There are non-zero dummy bytes after the payload.\n");
 	}
@@ -530,7 +530,7 @@ void edid_state::parse_if_avi(const unsigned char *x, unsigned size)
 	const unsigned short pr_1_2_4 = 0xb;
 	static const unsigned short vic_valid_pr[] = {
 		// VIC 0-7
-		0, 0, 0, 0, 0, 0, pr_2, pr_2, 
+		0, 0, 0, 0, 0, 0, pr_2, pr_2,
 		// VIC 8-15
 		pr_2, pr_2, pr_1_10, pr_1_10, pr_1_10, pr_1_10, pr_1_2, pr_1_2,
 		// VIC 16-23
