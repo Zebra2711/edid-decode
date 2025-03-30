@@ -50,7 +50,8 @@ int request_i2c_adapter(const char *device)
 }
 
 static int read_edid_block(int adapter_fd, __u8 *edid,
-			   uint8_t segment, uint8_t offset, uint8_t blocks)
+			   uint8_t segment, uint8_t offset, uint8_t blocks,
+			   bool silent)
 {
 	struct i2c_rdwr_ioctl_data data;
 	struct i2c_msg write_message;
@@ -90,18 +91,19 @@ static int read_edid_block(int adapter_fd, __u8 *edid,
 	}
 
 	if (err < 0) {
-		fprintf(stderr, "Unable to read edid: %s\n", strerror(errno));
+		if (!silent)
+			fprintf(stderr, "Unable to read edid: %s\n", strerror(errno));
 		return err;
 	}
 	return 0;
 }
 
-int read_edid(int adapter_fd, unsigned char *edid)
+int read_edid(int adapter_fd, unsigned char *edid, bool silent)
 {
 	unsigned n_extension_blocks;
 	int err;
 
-	err = read_edid_block(adapter_fd, edid, 0, 0, 2);
+	err = read_edid_block(adapter_fd, edid, 0, 0, 2, silent);
 	if (err)
 		return err;
 	n_extension_blocks = edid[126];
@@ -109,14 +111,15 @@ int read_edid(int adapter_fd, unsigned char *edid)
 		return 1;
 	for (unsigned i = 2; i <= n_extension_blocks; i += 2) {
 		err = read_edid_block(adapter_fd, edid + i * 128, i / 2, 0,
-				      (i + 1 > n_extension_blocks ? 1 : 2));
+				      (i + 1 > n_extension_blocks ? 1 : 2),
+				      silent);
 		if (err)
 			return err;
 	}
 	return n_extension_blocks + 1;
 }
 
-int test_reliability(int adapter_fd, unsigned cnt, unsigned msleep)
+int test_reliability(int adapter_fd, unsigned secs, unsigned msleep)
 {
 	unsigned char edid[EDID_PAGE_SIZE * EDID_MAX_BLOCKS];
 	unsigned char edid_tmp[EDID_PAGE_SIZE * EDID_MAX_BLOCKS];
@@ -131,14 +134,15 @@ int test_reliability(int adapter_fd, unsigned cnt, unsigned msleep)
 	}
 	blocks = ret;
 
-	if (cnt)
-		printf("Read EDID (%u bytes) %u times with %u milliseconds between each read.\n\n",
-		       blocks * EDID_PAGE_SIZE, cnt, msleep);
+	if (secs)
+		printf("Read EDID (%u bytes) for %u seconds with %u milliseconds between each read.\n\n",
+		       blocks * EDID_PAGE_SIZE, secs, msleep);
 	else
 		printf("Read EDID (%u bytes) forever with %u milliseconds between each read.\n\n",
 		       blocks * EDID_PAGE_SIZE, msleep);
 
 	time_t start = time(NULL);
+	time_t start_test = start;
 
 	while (true) {
 		iter++;
@@ -168,16 +172,17 @@ int test_reliability(int adapter_fd, unsigned cnt, unsigned msleep)
 			printf("FAIL: mismatch between EDIDs (iteration %u).\n", iter);
 			return -1;
 		}
-		if (cnt && iter == cnt)
-			break;
 		time_t cur = time(NULL);
+		if (secs && cur - start_test > secs)
+			break;
 		if (cur - start >= 10) {
 			start = cur;
 			printf("At iteration %u...\n", iter);
+			fflush(stdout);
 		}
 	}
 
-	printf("\n%u iterations: PASS\n", cnt);
+	printf("\n%u iterations over %u seconds: PASS\n", iter, secs);
 	return 0;
 }
 
