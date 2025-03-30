@@ -174,10 +174,11 @@ static void usage(void)
 	       "  --i2c-edid		Read the EDID from the DDC lines.\n"
 	       "  --i2c-hdcp		Read the HDCP from the DDC lines.\n"
 	       "  --i2c-hdcp-ri=<t>	Read and print the HDCP Ri information every <t> seconds.\n"
-	       "  --i2c-test-reliability [cnt=<cnt>][,sleep=<msecs>]\n"
-	       "                        Read the EDID <cnt> times (0=forever), with a sleep of <msecs> milliseconds\n"
-	       "                        (default value is 50 ms) in between each read. Report a FAIL if there are\n"
-	       "                        mismatches between EDIDs. This tests the i2c communication towards the display.\n"
+	       "  --i2c-test-reliability [duration=<secs>][,sleep=<msecs>]\n"
+	       "                        Read the EDID continuously for <secs> seconds (default=0=forever), with a sleep\n"
+	       "                        of <msecs> milliseconds (default value is 50 ms) in between each read.\n"
+	       "                        Report a FAIL if there are mismatches between EDIDs.\n"
+	       "                        This tests the i2c communication towards the display.\n"
 #endif
 	       "  --std <byte1>,<byte2> Show the standard timing represented by these two bytes.\n"
 	       "  --dmt <dmt>           Show the timings for the DMT with the given DMT ID.\n"
@@ -1118,8 +1119,9 @@ static bool extract_edid(int fd, FILE *error)
 
 	/* Assume binary */
 	if (edid_data.size() > sizeof(edid)) {
-		fprintf(error, "Binary EDID length %zu is greater than %zu.\n",
-			edid_data.size(), sizeof(edid));
+		if (!options[OptPhysicalAddress])
+			fprintf(error, "Binary EDID length %zu is greater than %zu.\n",
+				edid_data.size(), sizeof(edid));
 		return false;
 	}
 	memcpy(edid, data, edid_data.size());
@@ -1141,7 +1143,8 @@ static int edid_from_file(const char *from_file, FILE *error)
 		from_file = "stdin";
 		fd = 0;
 	} else if ((fd = open(from_file, flags)) == -1) {
-		perror(from_file);
+		if (!options[OptPhysicalAddress])
+			perror(from_file);
 		return -1;
 	}
 
@@ -2304,7 +2307,7 @@ static void parse_ovt(char *optarg)
 }
 
 enum test_reliability_opts {
-	REL_CNT,
+	REL_DURATION,
 	REL_MSLEEP,
 };
 
@@ -2314,7 +2317,7 @@ static int parse_test_reliability_subopt(char **subopt_str, unsigned *value)
 	char *opt_str;
 
 	static const char * const subopt_list[] = {
-		"cnt",
+		"duration",
 		"msleep",
 		nullptr
 	};
@@ -2338,7 +2341,7 @@ static int parse_test_reliability_subopt(char **subopt_str, unsigned *value)
 	return opt;
 }
 
-static void parse_test_reliability(char *optarg, unsigned &cnt, unsigned &msleep)
+static void parse_test_reliability(char *optarg, unsigned &duration, unsigned &msleep)
 {
 	while (*optarg != '\0') {
 		int opt;
@@ -2347,8 +2350,8 @@ static void parse_test_reliability(char *optarg, unsigned &cnt, unsigned &msleep
 		opt = parse_test_reliability_subopt(&optarg, &opt_val);
 
 		switch (opt) {
-		case REL_CNT:
-			cnt = opt_val;
+		case REL_DURATION:
+			duration = opt_val;
 			break;
 		case REL_MSLEEP:
 			msleep = opt_val;
@@ -2368,7 +2371,7 @@ int main(int argc, char **argv)
 	int adapter_fd = -1;
 	double hdcp_ri_sleep = 0;
 	std::vector<std::string> if_names;
-	unsigned test_rel_cnt = 0;
+	unsigned test_rel_duration = 0;
 	unsigned test_rel_msleep = 50;
 	unsigned idx = 0;
 	unsigned i;
@@ -2451,7 +2454,7 @@ int main(int argc, char **argv)
 		}
 		case OptI2CTestReliability:
 			if (optarg)
-				parse_test_reliability(optarg, test_rel_cnt, test_rel_msleep);
+				parse_test_reliability(optarg, test_rel_duration, test_rel_msleep);
 			break;
 #endif
 		case OptI2CHDCPRi:
@@ -2570,7 +2573,7 @@ int main(int argc, char **argv)
 			if (options[OptI2CHDCPRi])
 				ret = read_hdcp_ri(adapter_fd, hdcp_ri_sleep);
 			if (options[OptI2CTestReliability])
-				ret = test_reliability(adapter_fd, test_rel_cnt, test_rel_msleep);
+				ret = test_reliability(adapter_fd, test_rel_duration, test_rel_msleep);
 		} else if (options[OptInfoFrame] && !options[OptGTF]) {
 			ret = 0;
 		} else {
